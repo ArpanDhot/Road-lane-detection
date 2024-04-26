@@ -59,17 +59,63 @@ def hough_transform(masked_edges, image, min_line_length_threshold):
     # Create an empty image to draw lines on
     line_image = np.zeros_like(image)
 
-    # Iterate over the output lines and draw them on the line image
-    if lines is not None:
-        for line in lines:
-            for x1, y1, x2, y2 in line:
-                # Calculate the length of the line
-                length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                # Calculate the angle of the line in degrees
-                angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
-                # Filter out the lines that are too horizontal or vertical and shorter than the threshold
-                if length > min_line_length_threshold and (angle > 20 and angle < 160):
-                    cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
+    # Find the midpoint at the bottom of the trapezoid
+    midpoint_x = image.shape[1] // 2
+
+    # Prepare lists to hold the qualifying lines on the left and right
+    left_lines = []
+    right_lines = []
+
+    # Iterate over the output lines to sort them into left and right
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            # Calculate the length and angle as before
+            length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
+
+            # Calculate the slope and the intercept
+            slope = (y2 - y1) / (x2 - x1) if (x2 - x1) != 0 else 0
+            intercept = y1 - slope * x1
+
+            # Check if the line is of sufficient length and has an acceptable angle
+            if length > min_line_length_threshold and (angle > 20 and angle < 160):
+                # Determine if the line is on the left or right
+                if slope < 0 and x1 < midpoint_x and x2 < midpoint_x:
+                    left_lines.append((slope, intercept))
+                elif slope > 0 and x1 > midpoint_x and x2 > midpoint_x:
+                    right_lines.append((slope, intercept))
+
+    # Function to find the line with the highest intercept on the image, which
+    # is equivalent to the line that appears first from the bottom
+    def find_first_line(lines):
+        if lines:
+            # Sort the lines based on the intercept
+            lines = sorted(lines, key=lambda line: line[1], reverse=True)
+            # Return the first line
+            return lines[0]
+        return None
+
+    # Find the first line on the left and right
+    first_left_line = find_first_line(left_lines)
+    first_right_line = find_first_line(right_lines)
+
+    # Draw the first left line
+    if first_left_line is not None:
+        slope, intercept = first_left_line
+        y1 = image.shape[0]
+        x1 = int((y1 - intercept) / slope)
+        y2 = int(y1 / 2)
+        x2 = int((y2 - intercept) / slope)
+        cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
+
+    # Draw the first right line
+    if first_right_line is not None:
+        slope, intercept = first_right_line
+        y1 = image.shape[0]
+        x1 = int((y1 - intercept) / slope)
+        y2 = int(y1 / 2)
+        x2 = int((y2 - intercept) / slope)
+        cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
 
     return line_image
 
