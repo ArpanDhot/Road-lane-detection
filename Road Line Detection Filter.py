@@ -43,6 +43,37 @@ def mask_trapezoid(edges):
     return masked_edges
 
 
+# Function to apply the Hough Transform and filter the lines
+def hough_transform(masked_edges):
+    # Define the Hough transform parameters
+    rho = 1  # distance resolution in pixels of the Hough grid
+    theta = np.pi / 180  # angular resolution in radians of the Hough grid
+    threshold = 15  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 40  # minimum number of pixels making up a line
+    max_line_gap = 20  # maximum gap in pixels between connectable line segments
+
+    # Run Hough on the edge-detected image
+    lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array([]),
+                            min_line_length, max_line_gap)
+
+    # Create an empty image to draw lines on
+    line_image = np.zeros_like(image)
+
+    # Iterate over the output lines and draw them on the line image
+    if lines is not None:
+        for line in lines:
+            for x1, y1, x2, y2 in line:
+                # Calculate the length of the line
+                length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                # Calculate the angle of the line in degrees
+                angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
+                # Filter out the lines that are too horizontal or vertical
+                if length > min_line_length and (angle > 20 and angle < 160):
+                    cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
+
+    return line_image
+
+
 # Path to the image file
 image_path = 'um_000005.png'
 
@@ -52,9 +83,15 @@ image, gray, blur, edges = process_image(image_path)
 # Apply the trapezoidal mask to the Canny edges
 trapezoid_masked_edges = mask_trapezoid(edges)
 
-# Visualize the trapezoidal masked edges
+# Use the Hough Transform to detect lines and filter them
+line_image = hough_transform(trapezoid_masked_edges)
+
+# Draw the lines on the original image
+combined_image = cv2.addWeighted(image, 0.8, line_image, 1, 0)
+
+# Visualize the final image
 plt.figure(figsize=(10, 5))
-plt.imshow(trapezoid_masked_edges, cmap='gray')
-plt.title('Trapezoid Masked Edges')
+plt.imshow(cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB))
+plt.title('Lane Lines')
 plt.axis('off')
 plt.show()
