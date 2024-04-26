@@ -2,145 +2,133 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-
-# Function to apply processing steps to an image
 def process_image(image_path):
-    # Read the image
     image = cv2.imread(image_path)
-    # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Apply Gaussian blur
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    # Apply Canny edge detection
     edges = cv2.Canny(blur, 50, 150)
-    return image, gray, blur, edges
+    return image, edges
 
-
-# Function to apply a trapezoidal mask to the image
 def mask_trapezoid(edges):
-    # Define a mask that is the same size as the edges image
     mask = np.zeros_like(edges)
-
-    # Get the image dimensions
     imshape = edges.shape
-    height, width = imshape[0], imshape[1]
-
-    # Define the trapezoid dimensions
-    lower_width = width
-    upper_width = int(0.4 * width)
-    height = int(0.5 * height)
-
-    # Define the polygon for the mask based on the trapezoid dimensions
-    vertices = np.array([[(width // 2 - upper_width // 2, height),
-                          (width // 2 + upper_width // 2, height),
-                          (width, imshape[0]), (0, imshape[0])]], dtype=np.int32)
-
-    # Fill the defined polygon with white color
+    vertices = np.array([[(100, imshape[0]), (imshape[1]//2-50, imshape[0]//2),
+                          (imshape[1]//2+50, imshape[0]//2), (imshape[1]-100, imshape[0])]], dtype=np.int32)
     cv2.fillPoly(mask, vertices, 255)
-
-    # Mask the edges image
     masked_edges = cv2.bitwise_and(edges, mask)
     return masked_edges
 
-
-# Function to apply the Hough Transform and filter the lines by angle and length
-def hough_transform(masked_edges, image, min_line_length_threshold):
-    # Define the Hough transform parameters
-    rho = 1  # distance resolution in pixels of the Hough grid
-    theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 15  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 40  # minimum number of pixels making up a line
-    max_line_gap = 20  # maximum gap in pixels between connectable line segments
-
-    # Run Hough on the edge-detected image
-    lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array([]),
-                            min_line_length, max_line_gap)
-
-    # Create an empty image to draw lines on
-    line_image = np.zeros_like(image)
-
-    # Find the midpoint at the bottom of the trapezoid
-    midpoint_x = image.shape[1] // 2
-
-    # Prepare lists to hold the qualifying lines on the left and right
-    left_lines = []
-    right_lines = []
-
-    # Iterate over the output lines to sort them into left and right
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            # Calculate the length and angle as before
-            length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-            angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
-
-            # Calculate the slope and the intercept
-            slope = (y2 - y1) / (x2 - x1) if (x2 - x1) != 0 else 0
-            intercept = y1 - slope * x1
-
-            # Check if the line is of sufficient length and has an acceptable angle
-            if length > min_line_length_threshold and (angle > 20 and angle < 160):
-                # Determine if the line is on the left or right
-                if slope < 0 and x1 < midpoint_x and x2 < midpoint_x:
-                    left_lines.append((slope, intercept))
-                elif slope > 0 and x1 > midpoint_x and x2 > midpoint_x:
-                    right_lines.append((slope, intercept))
-
-    # Function to find the line with the highest intercept on the image, which
-    # is equivalent to the line that appears first from the bottom
-    def find_first_line(lines):
-        if lines:
-            # Sort the lines based on the intercept
-            lines = sorted(lines, key=lambda line: line[1], reverse=True)
-            # Return the first line
-            return lines[0]
-        return None
-
-    # Find the first line on the left and right
-    first_left_line = find_first_line(left_lines)
-    first_right_line = find_first_line(right_lines)
-
-    # Draw the first left line
-    if first_left_line is not None:
-        slope, intercept = first_left_line
-        y1 = image.shape[0]
-        x1 = int((y1 - intercept) / slope)
-        y2 = int(y1 / 2)
-        x2 = int((y2 - intercept) / slope)
-        cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
-
-    # Draw the first right line
-    if first_right_line is not None:
-        slope, intercept = first_right_line
-        y1 = image.shape[0]
-        x1 = int((y1 - intercept) / slope)
-        y2 = int(y1 / 2)
-        x2 = int((y2 - intercept) / slope)
-        cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
-
-    return line_image
+def birds_eye_view(image):
+    h, w = image.shape[:2]
+    src = np.float32([
+        [w/2 - 56, h*0.65],  # Top left
+        [w/2 + 56, h*0.65],  # Top right
+        [w*0.15, h],         # Bottom left
+        [w*0.85, h]          # Bottom right
+    ])
+    dst = np.float32([
+        [w*0.3, 0],          # Map top left to new position
+        [w*0.7, 0],          # Map top right to new position
+        [w*0.4, h],          # Map bottom left closer to the center
+        [w*0.6, h]           # Map bottom right closer to the center
+    ])
+    M = cv2.getPerspectiveTransform(src, dst)
+    Minv = cv2.getPerspectiveTransform(dst, src)
+    warped = cv2.warpPerspective(image, M, (w, h), flags=cv2.INTER_LINEAR)
+    return warped, Minv
 
 
-# Path to the image file
-image_path = 'um_000005.png'
+def find_lane_pixels(binary_warped):
+    histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
+    out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
+    midpoint = int(histogram.shape[0]//2)
+    leftx_base = np.argmax(histogram[:midpoint])
+    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
 
-# Process the image to get the edges
-image, gray, blur, edges = process_image(image_path)
+    nwindows = 9
+    window_height = int(binary_warped.shape[0]//nwindows)
+    nonzero = binary_warped.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    leftx_current = leftx_base
+    rightx_current = rightx_base
 
-# Apply the trapezoidal mask to the Canny edges
-trapezoid_masked_edges = mask_trapezoid(edges)
+    margin = 100
+    minpix = 50
+    left_lane_inds = []
+    right_lane_inds = []
 
-# Define the minimum line length threshold
-min_line_length_threshold = 100  # Adjust this value as needed
+    for window in range(nwindows):
+        win_y_low = binary_warped.shape[0] - (window+1)*window_height
+        win_y_high = binary_warped.shape[0] - window*window_height
+        win_xleft_low = leftx_current - margin
+        win_xleft_high = leftx_current + margin
+        win_xright_low = rightx_current - margin
+        win_xright_high = rightx_current + margin
 
-# Use the Hough Transform to detect lines and filter them by length and angle
-line_image = hough_transform(trapezoid_masked_edges, image, min_line_length_threshold)
+        cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0,255,0), 2)
+        cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0,255,0), 2)
 
-# Draw the lines on the original image
-combined_image = cv2.addWeighted(image, 0.8, line_image, 1, 0)
+        left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+        (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
+        right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+        (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
 
-# Visualize the final image
-plt.figure(figsize=(10, 5))
-plt.imshow(cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB))
-plt.title('Lane Lines')
-plt.axis('off')
-plt.show()
+        left_lane_inds.append(left_inds)
+        right_lane_inds.append(right_inds)
+
+        if len(left_inds) > minpix:
+            leftx_current = int(np.mean(nonzerox[left_inds]))
+        if len(right_inds) > minpix:
+            rightx_current = int(np.mean(nonzerox[right_inds]))
+
+    left_lane_inds = np.concatenate(left_lane_inds)
+    right_lane_inds = np.concatenate(right_lane_inds)
+
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds]
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+
+    return leftx, lefty, rightx, righty, out_img
+
+def fit_polynomial(binary_warped):
+    leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped)
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+    return left_fit, right_fit, out_img
+
+def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
+    new_img = np.copy(original_img)
+    h, w = binary_warped.shape[:2]
+    ploty = np.linspace(0, h-1, num=h)
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+    warp_zero = np.zeros_like(binary_warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    newwarp = cv2.warpPerspective(color_warp, Minv, (w, h))
+    result = cv2.addWeighted(new_img, 1, newwarp, 0.3, 0)
+    return result
+
+def main():
+    image_path = 'um_000005.png'  # Specify the path to your image file
+    image, edges = process_image(image_path)
+    masked_edges = mask_trapezoid(edges)
+    binary_warped, Minv = birds_eye_view(masked_edges)
+    left_fit, right_fit, out_img = fit_polynomial(binary_warped)
+    result = draw_lanes(image, binary_warped, left_fit, right_fit, Minv)
+
+    plt.imshow(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
+    plt.title('Detected Lanes')
+    plt.axis('off')
+    plt.show()
+
+if __name__ == "__main__":
+    main()
