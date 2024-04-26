@@ -43,8 +43,8 @@ def mask_trapezoid(edges):
     return masked_edges
 
 
-# Function to apply the Hough Transform and filter the lines
-def hough_transform(masked_edges):
+# Function to apply the Hough Transform and filter the lines by angle and length
+def hough_transform(masked_edges, image, min_line_length_threshold):
     # Define the Hough transform parameters
     rho = 1  # distance resolution in pixels of the Hough grid
     theta = np.pi / 180  # angular resolution in radians of the Hough grid
@@ -67,8 +67,8 @@ def hough_transform(masked_edges):
                 length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 # Calculate the angle of the line in degrees
                 angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
-                # Filter out the lines that are too horizontal or vertical
-                if length > min_line_length and (angle > 20 and angle < 160):
+                # Filter out the lines that are too horizontal or vertical and shorter than the threshold
+                if length > min_line_length_threshold and (angle > 20 and angle < 160):
                     cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
 
     return line_image
@@ -83,8 +83,11 @@ image, gray, blur, edges = process_image(image_path)
 # Apply the trapezoidal mask to the Canny edges
 trapezoid_masked_edges = mask_trapezoid(edges)
 
-# Use the Hough Transform to detect lines and filter them
-line_image = hough_transform(trapezoid_masked_edges)
+# Define the minimum line length threshold
+min_line_length_threshold = 100  # Adjust this value as needed
+
+# Use the Hough Transform to detect lines and filter them by length and angle
+line_image = hough_transform(trapezoid_masked_edges, image, min_line_length_threshold)
 
 # Draw the lines on the original image
 combined_image = cv2.addWeighted(image, 0.8, line_image, 1, 0)
