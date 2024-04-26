@@ -117,18 +117,17 @@ def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
     result = cv2.addWeighted(new_img, 1, newwarp, 0.3, 0)
     return result
 
-def main():
-    image_path = 'um_000005.png'  # Specify the path to your image file
-    image, edges = process_image(image_path)
-    masked_edges = mask_trapezoid(edges)
-    binary_warped, Minv = birds_eye_view(masked_edges)
-    left_fit, right_fit, out_img = fit_polynomial(binary_warped)
-    result = draw_lanes(image, binary_warped, left_fit, right_fit, Minv)
 
-    plt.imshow(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
-    plt.title('Detected Lanes')
-    plt.axis('off')
-    plt.show()
+image_path = 'um_000005.png'  # Specify the path to your image file
+image, edges = process_image(image_path)
+masked_edges = mask_trapezoid(edges)
+binary_warped, Minv = birds_eye_view(masked_edges)
+left_fit, right_fit, out_img = fit_polynomial(binary_warped)
+result = draw_lanes(image, binary_warped, left_fit, right_fit, Minv)
 
-if __name__ == "__main__":
-    main()
+plt.imshow(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
+plt.title('Detected Lanes')
+plt.axis('off')
+plt.show()
+
+
