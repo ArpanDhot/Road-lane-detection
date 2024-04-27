@@ -4,22 +4,32 @@ import matplotlib.pyplot as plt
 
 def process_image(image_path):
     image = cv2.imread(image_path)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Color filtering to highlight white and yellow lanes
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    yellow_lower = np.array([20, 100, 100], dtype="uint8")
+    yellow_upper = np.array([30, 255, 255], dtype="uint8")
+    yellow_mask = cv2.inRange(hsv, yellow_lower, yellow_upper)
+    white_lower = np.array([0, 0, 200], dtype="uint8")
+    white_upper = np.array([255, 30, 255], dtype="uint8")
+    white_mask = cv2.inRange(hsv, white_lower, white_upper)
+    mask = cv2.bitwise_or(yellow_mask, white_mask)
+    target = cv2.bitwise_and(image, image, mask=mask)
+
+    gray = cv2.cvtColor(target, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 50, 150)
-    return image, edges
 
-def mask_trapezoid(edges):
+    # Applying trapezoidal mask here
     mask = np.zeros_like(edges)
     imshape = edges.shape
     vertices = np.array([[(100, imshape[0]), (imshape[1]//2-50, imshape[0]//2),
                           (imshape[1]//2+50, imshape[0]//2), (imshape[1]-100, imshape[0])]], dtype=np.int32)
     cv2.fillPoly(mask, vertices, 255)
     masked_edges = cv2.bitwise_and(edges, mask)
-    return masked_edges
+    return image, masked_edges
 
-def birds_eye_view(image):
-    h, w = image.shape[:2]
+def birds_eye_view(masked_edges):
+    h, w = masked_edges.shape
     src = np.float32([
         [w/2 - 56, h*0.65],  # Top left
         [w/2 + 56, h*0.65],  # Top right
@@ -34,12 +44,11 @@ def birds_eye_view(image):
     ])
     M = cv2.getPerspectiveTransform(src, dst)
     Minv = cv2.getPerspectiveTransform(dst, src)
-    warped = cv2.warpPerspective(image, M, (w, h), flags=cv2.INTER_LINEAR)
+    warped = cv2.warpPerspective(masked_edges, M, (w, h), flags=cv2.INTER_LINEAR)
     return warped, Minv
 
-
 def find_lane_pixels(binary_warped):
-    histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
+    histogram = np.sum(binary_warped[binary_warped.shape[0]//2:], axis=0)
     out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
     midpoint = int(histogram.shape[0]//2)
     leftx_base = np.argmax(histogram[:midpoint])
@@ -69,18 +78,18 @@ def find_lane_pixels(binary_warped):
         cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0,255,0), 2)
         cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0,255,0), 2)
 
-        left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+        good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
         (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
-        right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+        good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
         (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
 
-        left_lane_inds.append(left_inds)
-        right_lane_inds.append(right_inds)
+        left_lane_inds.append(good_left_inds)
+        right_lane_inds.append(good_right_inds)
 
-        if len(left_inds) > minpix:
-            leftx_current = int(np.mean(nonzerox[left_inds]))
-        if len(right_inds) > minpix:
-            rightx_current = int(np.mean(nonzerox[right_inds]))
+        if len(good_left_inds) > minpix:
+            leftx_current = int(np.mean(nonzerox[good_left_inds]))
+        if len(good_right_inds) > minpix:
+            rightx_current = int(np.mean(nonzerox[good_right_inds]))
 
     left_lane_inds = np.concatenate(left_lane_inds)
     right_lane_inds = np.concatenate(right_lane_inds)
@@ -117,10 +126,8 @@ def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
     result = cv2.addWeighted(new_img, 1, newwarp, 0.3, 0)
     return result
 
-
 image_path = 'um_000005.png'  # Specify the path to your image file
-image, edges = process_image(image_path)
-masked_edges = mask_trapezoid(edges)
+image, masked_edges = process_image(image_path)
 binary_warped, Minv = birds_eye_view(masked_edges)
 left_fit, right_fit, out_img = fit_polynomial(binary_warped)
 result = draw_lanes(image, binary_warped, left_fit, right_fit, Minv)
@@ -129,5 +136,3 @@ plt.imshow(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
 plt.title('Detected Lanes')
 plt.axis('off')
 plt.show()
-
-
