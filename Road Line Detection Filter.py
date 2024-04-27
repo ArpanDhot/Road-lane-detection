@@ -107,7 +107,6 @@ def fit_polynomial(binary_warped):
     right_fit = np.polyfit(righty, rightx, 2)
     return left_fit, right_fit, out_img
 
-
 def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
     new_img = np.copy(original_img)
     h, w = binary_warped.shape[:2]
@@ -130,23 +129,31 @@ def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
     # Calculate the lane center dynamically along the y-axis
     lane_center_x = (left_fitx + right_fitx) / 2
 
-    # Draw the lane center line
-    for y, x in zip(ploty, lane_center_x):
-        cv2.circle(result, (int(x), int(y)), 2, (255, 0, 0), -1)
+    # Determine the vertical midpoint from which to start drawing the lines
+    start_y = h // 2
 
-    # Frame center line (static, based on image center)
-    cv2.line(result, (w//2, 0), (w//2, h), (0, 255, 255), 5)
+    # Common bottom point for both lines
+    bottom_lane_center = (left_fitx[-1] + right_fitx[-1]) / 2
+    bottom_frame_center = w / 2
+    common_bottom_x = int((bottom_lane_center + bottom_frame_center) / 2)
 
-    # Calculate angle of deviation (example at the bottom of the image)
-    lane_center = lane_center_x[-1]
-    frame_center = w / 2
-    angle = np.arctan2(h, (frame_center - lane_center))
+    # Draw lines from the common bottom point to half their full length
+    cv2.line(result, (common_bottom_x, h), (int(lane_center_x[start_y]), start_y), (255, 0, 0), 3)
+    cv2.line(result, (common_bottom_x, h), (w//2, start_y), (0, 255, 255), 3)
+
+    # Calculate angle of deviation at the start_y position
+    angle = np.arctan2(h - start_y, (w//2 - lane_center_x[start_y]))
     angle_deg = np.degrees(angle)
 
-    cv2.putText(result, f"Deviation Angle: {angle_deg:.2f} degrees", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    # Create a rectangle for the angle text at the bottom
+    text = f"D: {angle_deg:.0f}"
+    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+    text_x = common_bottom_x - text_size[0] // 2  # Center the text
+    text_y = h - 10  # A little above the bottom
+    cv2.rectangle(result, (text_x - 10, text_y + 10), (text_x + text_size[0] + 10, text_y - text_size[1] - 10), (0, 0, 0), -1)
+    cv2.putText(result, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
     return result
-
 
 image_path = 'um_000005.png'  # Specify the path to your image file
 image, masked_edges = process_image(image_path)
