@@ -107,12 +107,13 @@ def fit_polynomial(binary_warped):
     right_fit = np.polyfit(righty, rightx, 2)
     return left_fit, right_fit, out_img
 
+
 def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
     new_img = np.copy(original_img)
     h, w = binary_warped.shape[:2]
-    ploty = np.linspace(0, h-1, num=h)
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+    ploty = np.linspace(0, h - 1, num=h)
+    left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+    right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
     warp_zero = np.zeros_like(binary_warped).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
@@ -121,10 +122,22 @@ def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
     pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
     pts = np.hstack((pts_left, pts_right))
 
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
     newwarp = cv2.warpPerspective(color_warp, Minv, (w, h))
     result = cv2.addWeighted(new_img, 1, newwarp, 0.3, 0)
+
+    # Determine the car's position relative to the lanes
+    lane_center = (left_fitx[-1] + right_fitx[-1]) / 2
+    car_position = w / 2
+    if abs(lane_center - car_position) < 50:  # threshold of 50 pixels
+        text = "Car is within the lane"
+    else:
+        text = "Car is not within the lane"
+
+    cv2.putText(result, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+
     return result
+
 
 image_path = 'um_000005.png'  # Specify the path to your image file
 image, masked_edges = process_image(image_path)
