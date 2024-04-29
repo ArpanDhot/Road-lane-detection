@@ -1,16 +1,24 @@
 import cv2
 import numpy as np
 
+
 def region_of_interest(img):
     height = img.shape[0]
-    # Adjust these points based on your camera setup
+    width = img.shape[1]
+
+    # Define new vertices for the trapezoid based on your specific needs
     polygons = np.array([
-        [(200, height), (1100, height), (550, 250)]
-    ])
+        [(width * 0.1, height),  # bottom left
+         (width * 0.9, height),  # bottom right
+         (width * 0.6, height * 0.6),  # top right
+         (width * 0.4, height * 0.6)]  # top left
+    ], dtype=np.int32)
+
     mask = np.zeros_like(img)
     cv2.fillPoly(mask, polygons, 255)
     masked_img = cv2.bitwise_and(img, mask)
     return masked_img
+
 
 def canny_edge_detector(image):
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
@@ -62,7 +70,7 @@ def process_frame(frame):
     return combo_image
 
 # Load the video
-cap = cv2.VideoCapture('test_video.mp4')
+cap = cv2.VideoCapture('test_video.mp4')  # Replace 'path_to_video.mp4' with your video file path
 
 while cap.isOpened():
     ret, frame = cap.read()
