@@ -54,9 +54,9 @@ def average_lines(image, lines):
             parameters = np.polyfit((x1, x2), (y1, y2), 1)
             slope = parameters[0]
             intercept = parameters[1]
-            if slope < -0.3:  # Left lane
+            if slope < -0.3:
                 left_fit.append((slope, intercept))
-            elif slope > 0.3:  # Right lane
+            elif slope > 0.3:
                 right_fit.append((slope, intercept))
 
     if left_fit:
@@ -73,14 +73,13 @@ def calculate_lines(image, line_params):
     if line_params is not None:
         slope, intercept = line_params
         y1 = image.shape[0]
-        y2 = int(y1 * 0.8)  # Adjust to reduce line length
+        y2 = int(y1 * 0.8)
         x1 = int((y1 - intercept) / slope)
         x2 = int((y2 - intercept) / slope)
         return [x1, y1, x2, y2]
     return None
 
-
-def draw_lines_and_calculate_deviation(image, lines):
+def draw_lines(image, lines):
     line_image = np.zeros_like(image)
     overlay = np.copy(image)  # Create an overlay for semi-transparency
     if lines[0] is not None and lines[1] is not None:
@@ -106,29 +105,35 @@ def draw_lines_and_calculate_deviation(image, lines):
         cv2.fillPoly(overlay, [pts], (0, 255, 0))
 
         # Calculate the deviation angle from vertical
-        # Calculating the tangent angle from horizontal
         delta_x = (w // 2 - shift_left) - int(lane_center_x)
-        delta_y = h - start_y
-        angle_rad = np.arctan2(delta_y, delta_x)  # Angle in radians
+        angle_rad = np.arctan2(start_y, delta_x)  # Angle in radians
         angle_deg = np.degrees(angle_rad)  # Convert radians to degrees
-
-        # Adjusting to show deviation from vertical
         deviation = abs(90 - angle_deg)  # Absolute deviation from 90 degrees
 
-        # Display the calculated angle
-        text = f"Deviation: {deviation:.0f} degrees"
-        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        # Steering direction based on angle
+        if angle_deg == 90:
+             steering_text =""
+        elif  angle_deg < 90:
+            steering_text="Steering Left"
+        else:
+            steering_text="Steering Right"
+
+        # Display the calculated angle and steering direction
+        deviation_text = f"Deviation: {deviation:.0f} degrees"
+        text_size = cv2.getTextSize(deviation_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
         text_x = bottom_start_x - text_size[0] // 2  # Center the text horizontally at the adjusted start point
         text_y = h - 10  # Set just above the bottom
         cv2.rectangle(overlay, (text_x - 10, text_y + 10), (text_x + text_size[0] + 10, text_y - text_size[1] - 10),
                       (0, 0, 0), -1)
-        cv2.putText(overlay, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(overlay, deviation_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(overlay, steering_text, (text_x - 500, text_y - 930), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
         # Blend overlay with original image
         alpha = 0.4  # Set transparency factor
         line_image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
 
     return line_image
+
 
 
 cap = cv2.VideoCapture('test_video.mp4')  # Replace 'test_video.mp4' with your video file path
@@ -141,7 +146,7 @@ while cap.isOpened():
     cropped_image = region_of_interest(canny_image)
     lines = detect_lines(cropped_image)
     averaged_lines = average_lines(frame, lines)
-    line_image = draw_lines_and_calculate_deviation(frame, averaged_lines)
+    line_image = draw_lines(frame, averaged_lines)
     resize = cv2.resize(line_image, (960, 540))
     cv2.imshow('result', resize)
     if cv2.waitKey(1) & 0xFF == ord('q'):
