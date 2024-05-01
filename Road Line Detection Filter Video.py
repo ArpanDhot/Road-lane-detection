@@ -54,9 +54,9 @@ def average_lines(image, lines):
             parameters = np.polyfit((x1, x2), (y1, y2), 1)
             slope = parameters[0]
             intercept = parameters[1]
-            if slope < -0.3:  # Left lane
+            if slope < -0.3:
                 left_fit.append((slope, intercept))
-            elif slope > 0.3:  # Right lane
+            elif slope > 0.3:
                 right_fit.append((slope, intercept))
 
     if left_fit:
@@ -73,7 +73,7 @@ def calculate_lines(image, line_params):
     if line_params is not None:
         slope, intercept = line_params
         y1 = image.shape[0]
-        y2 = int(y1 * 0.8)  # Adjust to reduce line length
+        y2 = int(y1 * 0.8)
         x1 = int((y1 - intercept) / slope)
         x2 = int((y2 - intercept) / slope)
         return [x1, y1, x2, y2]
@@ -82,6 +82,7 @@ def calculate_lines(image, line_params):
 def draw_lines(image, lines):
     line_image = np.zeros_like(image)
     overlay = np.copy(image)  # Create an overlay for semi-transparency
+    h, w = image.shape[:2]
     if lines[0] is not None and lines[1] is not None:
         # Draw lines and fill polygon between them
         cv2.line(overlay, (lines[0][0], lines[0][1]), (lines[0][2], lines[0][3]), (255, 0, 0), 10)
@@ -89,10 +90,30 @@ def draw_lines(image, lines):
         pts = np.array([[lines[0][0], lines[0][1]], [lines[0][2], lines[0][3]],
                         [lines[1][2], lines[1][3]], [lines[1][0], lines[1][1]]], np.int32)
         cv2.fillPoly(overlay, [pts], (0, 255, 0))
-        # Blend overlay
+
+        # Calculate the lane center and deviation angle
+        lane_center_x = (lines[0][2] + lines[1][2]) // 2
+        start_y = h // 2
+        bottom_lane_center = lane_center_x
+        bottom_frame_center = w // 2
+        common_bottom_x = (bottom_lane_center + bottom_frame_center) // 2
+
+        cv2.line(overlay, (common_bottom_x, h), (lane_center_x, start_y), (255, 0, 0), 3)
+        cv2.line(overlay, (common_bottom_x, h), (w//2, start_y), (0, 255, 255), 3)
+
+        angle = np.arctan2(h - start_y, (w//2 - lane_center_x))
+        angle_deg = np.degrees(angle)
+        text = f"D: {angle_deg:.0f} degrees"
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        text_x = common_bottom_x - text_size[0] // 2
+        text_y = h - 10
+        cv2.rectangle(overlay, (text_x - 10, text_y + 10), (text_x + text_size[0] + 10, text_y - text_size[1] - 10), (0, 0, 0), -1)
+        cv2.putText(overlay, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+
         alpha = 0.4  # Transparency factor
         line_image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
     return line_image
+
 
 cap = cv2.VideoCapture('test_video.mp4')  # Replace 'test_video.mp4' with your video file path
 
@@ -105,7 +126,8 @@ while cap.isOpened():
     lines = detect_lines(cropped_image)
     averaged_lines = average_lines(frame, lines)
     line_image = draw_lines(frame, averaged_lines)
-    cv2.imshow('result', line_image)
+    resize = cv2.resize(line_image, (960, 540))
+    cv2.imshow('result', resize)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
