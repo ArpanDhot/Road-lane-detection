@@ -168,10 +168,10 @@ def draw_lines(image, lines):
 
 
         # Blend overlay with original image
-        alpha = 0.4  # Set transparency factor
-        line_image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+        # alpha = 0.4  # Set transparency factor
+        # line_image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
 
-    return line_image
+    return overlay
 
 
 def get_roi_and_detection_line_y(frame):
@@ -261,7 +261,10 @@ def process_video(video_path):
 
         average_speed = speed_tracker.get_average_speed()
         if average_speed > 0:
-            print(f"Average Speed: {average_speed:.2f} MPH")
+            # Speed text to display
+            speed_text = f"2- Speed: {average_speed:.2f} MPH"
+            cv2.putText(filled_strips_image, speed_text, (1450, 140), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2,
+                        cv2.LINE_AA)
 
         # Lane detection logic
         canny_image = canny(frame)
