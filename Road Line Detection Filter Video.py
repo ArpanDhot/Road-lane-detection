@@ -79,9 +79,6 @@ def calculate_lines(image, line_params):
         return [x1, y1, x2, y2]
     return None
 
-
-
-
 def draw_lines(image, lines):
     line_image = np.zeros_like(image)
     overlay = np.copy(image)  # Create an overlay for semi-transparency
@@ -139,8 +136,6 @@ def draw_lines(image, lines):
     return line_image
 
 
-
-
 cap = cv2.VideoCapture('test_video.mp4')  # Replace 'test_video.mp4' with your video file path
 
 while cap.isOpened():
@@ -152,7 +147,7 @@ while cap.isOpened():
     lines = detect_lines(cropped_image)
     averaged_lines = average_lines(frame, lines)
     line_image = draw_lines(frame, averaged_lines)
-    resize = cv2.resize(line_image, (960, 540))
+    resize = cv2.resize(cropped_image, (960, 540))
     cv2.imshow('result', resize)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
