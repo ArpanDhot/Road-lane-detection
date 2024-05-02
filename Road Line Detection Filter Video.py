@@ -139,22 +139,25 @@ def draw_lines(image, lines):
         #cv2.fillPoly(overlay, [pts], (0, 255, 0))
 
         # Calculate the deviation angle from vertical
-        delta_x = (w // 2 - shift_left) - int(lane_center_x)
-        delta_y = h - min_y
-        angle_rad = np.arctan2(delta_y, abs(delta_x))  # Angle in radians
-        angle_deg = np.degrees(angle_rad)  # Convert radians to degrees
-        deviation = abs(90 - angle_deg)  # Absolute deviation from 90 degrees
+        delta_x = (w // 2 - shift_left) - int(lane_center_x)  # Keep delta_x as it is, without abs()
+        delta_y = h - min_y  # Assuming 'min_y' is the y-coordinate of the line's top point
 
-        # Steering direction based on angle
-        if angle_deg == 90:
+        # Calculate angle using arctan2, which gives the angle in radians from the x-axis
+        angle_rad = np.arctan2(delta_y, delta_x)  # Y first, X second as arctan2(y, x)
+        angle_deg = np.degrees(angle_rad)  # Convert radians to degrees
+        angle_from_vertical = 90 - abs(
+            angle_deg) if angle_deg < 0 else 90 - angle_deg  # Corrected to be relative to the vertical line
+
+        # Steering direction based on the angle relative to vertical
+        if angle_from_vertical == 0:
             steering_text = "1- Steering Straight"
-        elif angle_deg < 90:
+        elif angle_from_vertical > 0:
             steering_text = "1- Steering Left"
         else:
             steering_text = "1- Steering Right"
 
         # Display the calculated angle and steering direction
-        deviation_text = f"Deviation: {deviation:.0f} degrees"
+        deviation_text = f"Deviation: {abs(angle_from_vertical):.0f} degrees"
         text_size = cv2.getTextSize(deviation_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
         text_x = bottom_start_x - text_size[0] // 2  # Center the text horizontally at the adjusted start point
         text_y = h - 10  # Set just above the bottom
@@ -162,6 +165,7 @@ def draw_lines(image, lines):
                       (0, 0, 0), -1)
         cv2.putText(overlay, deviation_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(overlay, steering_text, (text_x - 500, text_y - 930), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2, cv2.LINE_AA)
+
 
         # Blend overlay with original image
         alpha = 0.4  # Set transparency factor
