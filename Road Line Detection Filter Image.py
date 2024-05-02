@@ -1,167 +1,264 @@
 import cv2
+import time
 import numpy as np
-import matplotlib.pyplot as plt
+from collections import deque
 
-def process_image(image_path):
-    image = cv2.imread(image_path)
-    # Color filtering to highlight white and yellow lanes
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    yellow_lower = np.array([20, 100, 100], dtype="uint8")
-    yellow_upper = np.array([30, 255, 255], dtype="uint8")
-    yellow_mask = cv2.inRange(hsv, yellow_lower, yellow_upper)
-    white_lower = np.array([0, 0, 200], dtype="uint8")
-    white_upper = np.array([255, 30, 255], dtype="uint8")
-    white_mask = cv2.inRange(hsv, white_lower, white_upper)
-    mask = cv2.bitwise_or(yellow_mask, white_mask)
-    target = cv2.bitwise_and(image, image, mask=mask)
 
-    gray = cv2.cvtColor(target, cv2.COLOR_BGR2GRAY)
+# Constants
+FRAME_RATE = 60  # Frame rate of the video, adjust according to your video
+DISTANCE_BETWEEN_STRIPS = 1  # Distance between strips in meters, adjust as needed
+
+
+
+class Line:
+    def __init__(self, max_history=10):
+        self.recent_fits = deque(maxlen=max_history)
+
+    def add_fit(self, fit):
+        if fit is not None:
+            self.recent_fits.append(fit)
+
+    def average_fit(self):
+        if self.recent_fits:
+            avg_fit = np.mean(self.recent_fits, axis=0)
+            return avg_fit
+        return None
+
+# Initialize line objects for left and right lane lines
+left_line = Line()
+right_line = Line()
+
+
+def calculate_speed(distance, time_seconds):
+    """Calculates speed given distance and time."""
+    if time_seconds > 0:
+        speed_mps = distance / time_seconds  # Speed in meters per second
+        return speed_mps * 2.23694  # Convert from m/s to mph
+    return 0
+class SpeedTracker:
+    def __init__(self):
+        self.speeds = deque(maxlen=FRAME_RATE)
+        self.last_crossing_time = None
+
+    def update_crossing(self, current_time):
+        if self.last_crossing_time is not None:
+            time_interval = current_time - self.last_crossing_time
+            speed = calculate_speed(DISTANCE_BETWEEN_STRIPS, time_interval)
+            self.speeds.append(speed)
+        self.last_crossing_time = current_time
+
+    def get_average_speed(self):
+        if len(self.speeds) > 0:
+            return sum(self.speeds) / len(self.speeds)
+        return 0
+
+
+
+def canny(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blur, 50, 150)
+    canny = cv2.Canny(blur, 50, 150)
+    return canny
 
-    # Applying trapezoidal mask here
-    mask = np.zeros_like(edges)
-    imshape = edges.shape
-    vertices = np.array([[(100, imshape[0]), (imshape[1]//2-50, imshape[0]//2),
-                          (imshape[1]//2+50, imshape[0]//2), (imshape[1]-100, imshape[0])]], dtype=np.int32)
-    cv2.fillPoly(mask, vertices, 255)
-    masked_edges = cv2.bitwise_and(edges, mask)
-    return image, masked_edges
-
-def birds_eye_view(masked_edges):
-    h, w = masked_edges.shape
-    src = np.float32([
-        [w/2 - 56, h*0.65],  # Top left
-        [w/2 + 56, h*0.65],  # Top right
-        [w*0.15, h],         # Bottom left
-        [w*0.85, h]          # Bottom right
+def region_of_interest(image):
+    height, width = image.shape[:2]
+    # Modify these coordinates to adjust the trapezoid
+    top_left = [int(width * 0.37), int(height * 0.7)]  # Move right to decrease width, down to decrease height
+    top_right = [int(width * 0.46), int(height * 0.7)]  # Move left to decrease width, down to decrease height
+    bottom_left = [int(width * 0.04), height]  # Move right to decrease bottom width
+    bottom_right = [int(width * 0.65), height]  # Move left to decrease bottom width
+    polygons = np.array([
+        [bottom_left, bottom_right, top_right, top_left]
     ])
-    dst = np.float32([
-        [w*0.3, 0],          # Map top left to new position
-        [w*0.7, 0],          # Map top right to new position
-        [w*0.4, h],          # Map bottom left closer to the center
-        [w*0.6, h]           # Map bottom right closer to the center
+    mask = np.zeros_like(image)
+    cv2.fillPoly(mask, polygons, 255)
+    masked_image = cv2.bitwise_and(image, mask)
+    return masked_image
+
+def detect_lines(image):
+    lines = cv2.HoughLinesP(image, 2, np.pi/180, 100, np.array([]), minLineLength=40, maxLineGap=5)
+    return lines
+
+def average_lines(image, lines):
+    left_fit = []
+    right_fit = []
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line.reshape(4)
+            parameters = np.polyfit((x1, x2), (y1, y2), 1)
+            slope = parameters[0]
+            intercept = parameters[1]
+            if slope < -0.3:
+                left_fit.append((slope, intercept))
+            elif slope > 0.3:
+                right_fit.append((slope, intercept))
+
+    if left_fit:
+        left_line.add_fit(np.mean(left_fit, axis=0))
+    if right_fit:
+        right_line.add_fit(np.mean(right_fit, axis=0))
+
+    left_avg = left_line.average_fit()
+    right_avg = right_line.average_fit()
+
+    return calculate_lines(image, left_avg), calculate_lines(image, right_avg)
+
+def calculate_lines(image, line_params):
+    if line_params is not None:
+        slope, intercept = line_params
+        y1 = image.shape[0]
+        y2 = int(y1 * 0.8)
+        x1 = int((y1 - intercept) / slope)
+        x2 = int((y2 - intercept) / slope)
+        return [x1, y1, x2, y2]
+    return None
+
+def draw_lines(image, lines):
+    line_image = np.zeros_like(image)
+    overlay = np.copy(image)  # Create an overlay for semi-transparency
+    if lines[0] is not None and lines[1] is not None:
+        h, w = image.shape[:2]
+        lane_center_x = (lines[0][2] + lines[1][2]) / 2  # Midpoint x-coordinate between the end points of lane lines
+        min_y = min(lines[0][3], lines[1][3])  # Use the lowest y-value from the endpoints of the lane lines
+
+        # Adjusting the starting point for both lines to the left of the frame center
+        shift_left = int(w * 0.089)  # Shift 10% of the width to the left
+        bottom_start_x = (w // 2) - shift_left  # Move starting point 10% to the left from the center
+
+        # Drawing the blue line from the lane center
+        cv2.line(overlay, (bottom_start_x, h), (int(lane_center_x), min_y), (255, 0, 0), 5)
+
+        # Drawing the yellow line vertically centered
+        cv2.line(overlay, (bottom_start_x, h), (w // 2 - shift_left, min_y), (0, 255, 255), 5)
+
+        # Draw lines and fill polygon between them
+        cv2.line(overlay, (lines[0][0], lines[0][1]), (lines[0][2], lines[0][3]), (255, 0, 0), 20)
+        cv2.line(overlay, (lines[1][0], lines[1][1]), (lines[1][2], lines[1][3]), (255, 0, 0), 20)
+        pts = np.array([[lines[0][0], lines[0][1]], [lines[0][2], lines[0][3]],
+                        [lines[1][2], lines[1][3]], [lines[1][0], lines[1][1]]], np.int32)
+        #cv2.fillPoly(overlay, [pts], (0, 255, 0))
+
+        # Calculate the deviation angle from vertical
+        delta_x = (w // 2 - shift_left) - int(lane_center_x)
+        delta_y = h - min_y
+        angle_rad = np.arctan2(delta_y, abs(delta_x))  # Angle in radians
+        angle_deg = np.degrees(angle_rad)  # Convert radians to degrees
+        deviation = abs(90 - angle_deg)  # Absolute deviation from 90 degrees
+
+        # Steering direction based on angle
+        if angle_deg == 90:
+            steering_text = "1- Steering Straight"
+        elif angle_deg < 90:
+            steering_text = "1- Steering Left"
+        else:
+            steering_text = "1- Steering Right"
+
+        # Display the calculated angle and steering direction
+        deviation_text = f"Deviation: {deviation:.0f} degrees"
+        text_size = cv2.getTextSize(deviation_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        text_x = bottom_start_x - text_size[0] // 2  # Center the text horizontally at the adjusted start point
+        text_y = h - 10  # Set just above the bottom
+        cv2.rectangle(overlay, (text_x - 10, text_y + 10), (text_x + text_size[0] + 10, text_y - text_size[1] - 10),
+                      (0, 0, 0), -1)
+        cv2.putText(overlay, deviation_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(overlay, steering_text, (text_x - 500, text_y - 930), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2, cv2.LINE_AA)
+
+        # Blend overlay with original image
+        alpha = 0.4  # Set transparency factor
+        line_image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+
+    return line_image
+
+
+def get_roi_and_detection_line_y(frame):
+    """Applies an ROI mask to the frame and returns the y-coordinate for the detection line."""
+    height, width = frame.shape[:2]
+    # Define the ROI; adjust these points based on your actual ROI
+    top_left = (450, height)
+    top_right = (700, int(height * 0.79))
+    bottom_right = (700, int(height * 0.73))
+    bottom_left = (25, height)
+
+    polygons = np.array([
+        [bottom_left, bottom_right, top_right, top_left]
     ])
-    M = cv2.getPerspectiveTransform(src, dst)
-    Minv = cv2.getPerspectiveTransform(dst, src)
-    warped = cv2.warpPerspective(masked_edges, M, (w, h), flags=cv2.INTER_LINEAR)
-    return warped, Minv
+    mask = np.zeros_like(frame)
+    cv2.fillPoly(mask, polygons, 255)
+    masked_image = cv2.bitwise_and(frame, mask)
 
-def find_lane_pixels(binary_warped):
-    histogram = np.sum(binary_warped[binary_warped.shape[0]//2:], axis=0)
-    out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
-    midpoint = int(histogram.shape[0]//2)
-    leftx_base = np.argmax(histogram[:midpoint])
-    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+    # Calculate the middle y-coordinate of the ROI for the detection line
+    top_y = int(height * 0.7)
+    bottom_y = height
+    detection_line_y = (top_y + bottom_y) // 2
 
-    nwindows = 9
-    window_height = int(binary_warped.shape[0]//nwindows)
-    nonzero = binary_warped.nonzero()
-    nonzeroy = np.array(nonzero[0])
-    nonzerox = np.array(nonzero[1])
-    leftx_current = leftx_base
-    rightx_current = rightx_base
+    return masked_image, detection_line_y, top_left[0], bottom_right[0]
 
-    margin = 100
-    minpix = 50
-    left_lane_inds = []
-    right_lane_inds = []
 
-    for window in range(nwindows):
-        win_y_low = binary_warped.shape[0] - (window+1)*window_height
-        win_y_high = binary_warped.shape[0] - window*window_height
-        win_xleft_low = leftx_current - margin
-        win_xleft_high = leftx_current + margin
-        win_xright_low = rightx_current - margin
-        win_xright_high = rightx_current + margin
+def detect_crossing(edges, line_y):
+    """Checks if there are any edges crossing the detection line."""
+    crossings = np.any(edges[line_y, :] > 0)
+    return crossings
 
-        cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0,255,0), 2)
-        cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0,255,0), 2)
 
-        good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
-        (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
-        good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
-        (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
+def overlay_edges_on_image(original_image, edge_image):
+    """Creates a color overlay of the detected edges on the original image."""
+    edge_colored = cv2.cvtColor(edge_image, cv2.COLOR_GRAY2BGR)
+    edge_colored[edge_image == 255] = [0, 0, 255]  # Edge pixels marked in red
+    overlay_image = cv2.addWeighted(original_image, 0.8, edge_colored, 0.2, 0)
+    return overlay_image
 
-        left_lane_inds.append(good_left_inds)
-        right_lane_inds.append(good_right_inds)
+def fill_strips(image, edges):
+    """Finds and fills the detected strips in the image based on their size."""
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    min_area = 50  # Minimum area for a contour to be considered a strip, adjust as needed
+    max_area = 1000  # Maximum area to exclude too large contours, adjust as needed
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if min_area < area < max_area:
+            cv2.drawContours(image, [contour], -1, (0, 255, 0), thickness=cv2.FILLED)
+    return image
 
-        if len(good_left_inds) > minpix:
-            leftx_current = int(np.mean(nonzerox[good_left_inds]))
-        if len(good_right_inds) > minpix:
-            rightx_current = int(np.mean(nonzerox[good_right_inds]))
 
-    left_lane_inds = np.concatenate(left_lane_inds)
-    right_lane_inds = np.concatenate(right_lane_inds)
 
-    leftx = nonzerox[left_lane_inds]
-    lefty = nonzeroy[left_lane_inds]
-    rightx = nonzerox[right_lane_inds]
-    righty = nonzeroy[right_lane_inds]
+# Process video for both speed and lane detection
+def process_video(video_path):
+    cap = cv2.VideoCapture(video_path)
+    speed_tracker = SpeedTracker()
 
-    return leftx, lefty, rightx, righty, out_img
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-def fit_polynomial(binary_warped):
-    leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped)
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    return left_fit, right_fit, out_img
+        # Speed detection logic
+        edges = canny(frame)
+        roi_edges, detection_line_y, roi_start_x, roi_end_x = get_roi_and_detection_line_y(edges)
+        filled_strips_image = fill_strips(frame.copy(), roi_edges)
 
-def draw_lanes(original_img, binary_warped, left_fit, right_fit, Minv):
-    new_img = np.copy(original_img)
-    h, w = binary_warped.shape[:2]
-    ploty = np.linspace(0, h-1, num=h)  # Generate y values for plotting
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+        if detect_crossing(roi_edges, detection_line_y):
+            speed_tracker.update_crossing(time.time())
 
-    warp_zero = np.zeros_like(binary_warped).astype(np.uint8)
-    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+        average_speed = speed_tracker.get_average_speed()
+        if average_speed > 0:
+            print(f"Average Speed: {average_speed:.2f} MPH")
 
-    # Re-create the points array for filling lane area
-    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-    pts = np.hstack((pts_left, pts_right))
+        # Lane detection logic
+        canny_image = canny(frame)
+        cropped_image = region_of_interest(canny_image)
+        lines = detect_lines(cropped_image)
+        averaged_lines = average_lines(frame, lines)
+        line_image = draw_lines(frame, averaged_lines)
 
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
-    newwarp = cv2.warpPerspective(color_warp, Minv, (w, h))
-    result = cv2.addWeighted(new_img, 1, newwarp, 0.3, 0)
+        # Combine overlays
+        final_image = cv2.addWeighted(line_image, 0.5, filled_strips_image, 0.5, 0)
+        cv2.line(final_image, (roi_start_x, detection_line_y), (roi_end_x, detection_line_y), (0, 255, 0), 2)
+        cv2.imshow('Result', cv2.resize(final_image, (960, 540)))
 
-    # Calculate the lane center dynamically along the y-axis
-    lane_center_x = (left_fitx + right_fitx) / 2
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-    # Determine the vertical midpoint from which to start drawing the lines
-    start_y = h // 2
+    cap.release()
+    cv2.destroyAllWindows()
 
-    # Common bottom point for both lines
-    bottom_lane_center = (left_fitx[-1] + right_fitx[-1]) / 2
-    bottom_frame_center = w / 2
-    common_bottom_x = int((bottom_lane_center + bottom_frame_center) / 2)
-
-    # Draw lines from the common bottom point to half their full length
-    cv2.line(result, (common_bottom_x, h), (int(lane_center_x[start_y]), start_y), (255, 0, 0), 3)
-    cv2.line(result, (common_bottom_x, h), (w//2, start_y), (0, 255, 255), 3)
-
-    # Calculate angle of deviation at the start_y position
-    angle = np.arctan2(h - start_y, (w//2 - lane_center_x[start_y]))
-    angle_deg = np.degrees(angle)
-
-    # Create a rectangle for the angle text at the bottom
-    text = f"D: {angle_deg:.0f}"
-    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-    text_x = common_bottom_x - text_size[0] // 2  # Center the text
-    text_y = h - 10  # A little above the bottom
-    cv2.rectangle(result, (text_x - 10, text_y + 10), (text_x + text_size[0] + 10, text_y - text_size[1] - 10), (0, 0, 0), -1)
-    cv2.putText(result, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-
-    return result
-
-image_path = 'um_000005.png'  # Specify the path to your image file
-image, masked_edges = process_image(image_path)
-binary_warped, Minv = birds_eye_view(masked_edges)
-left_fit, right_fit, out_img = fit_polynomial(binary_warped)
-result = draw_lanes(image, binary_warped, left_fit, right_fit, Minv)
-
-plt.imshow(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
-plt.title('Detected Lanes')
-plt.axis('off')
-plt.show()
+# Example usage
+process_video('test_video.mp4')  # Replace with the path to your video
