@@ -147,7 +147,7 @@ while cap.isOpened():
     lines = detect_lines(cropped_image)
     averaged_lines = average_lines(frame, lines)
     line_image = draw_lines(frame, averaged_lines)
-    resize = cv2.resize(cropped_image, (960, 540))
+    resize = cv2.resize(line_image, (960, 540))
     cv2.imshow('result', resize)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
