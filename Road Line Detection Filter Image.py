@@ -6,7 +6,7 @@ from collections import deque
 
 # Constants
 FRAME_RATE = 60  # Frame rate of the video, adjust according to your video
-DISTANCE_BETWEEN_STRIPS = 1  # Distance between strips in meters, adjust as needed
+DISTANCE_BETWEEN_STRIPS = 1.7  # Distance between strips in meters, adjust as needed
 
 
 
@@ -223,12 +223,29 @@ def fill_strips(image, edges):
 # Process video for both speed and lane detection
 def process_video(video_path):
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Error opening video stream or file")
+        return
+
     speed_tracker = SpeedTracker()
+    last_time = time.time()  # Initialize last_time before the loop
+
+    target_fps = 60  # Set target FPS to 60
+    frame_duration = 0.03 / target_fps  # Calculate target frame duration
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
+
+        # Calculate time to maintain consistent FPS
+        current_time = time.time()
+        elapsed_time = current_time - last_time
+
+        if elapsed_time < frame_duration:
+            time.sleep(frame_duration - elapsed_time)
+
+        last_time = current_time  # Update last_time to current
 
         # Speed detection logic
         edges = canny(frame)
@@ -253,7 +270,6 @@ def process_video(video_path):
         final_image = cv2.addWeighted(line_image, 0.5, filled_strips_image, 0.5, 0)
         cv2.line(final_image, (roi_start_x, detection_line_y), (roi_end_x, detection_line_y), (0, 255, 0), 2)
         cv2.imshow('Result', cv2.resize(final_image, (960, 540)))
-
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
