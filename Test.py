@@ -5,7 +5,7 @@ from collections import deque
 
 # Constants
 FRAME_RATE = 60  # Frame rate of the video, adjust according to your video
-DISTANCE_BETWEEN_STRIPS = 0.55  # Distance between strips in meters, adjust as needed
+DISTANCE_BETWEEN_STRIPS = 1  # Distance between strips in meters, adjust as needed
 
 
 def canny(image):
@@ -49,9 +49,10 @@ def detect_crossing(edges, line_y):
 def calculate_speed(distance, time_seconds):
     """Calculates speed given distance and time."""
     if time_seconds > 0:
-        speed = distance / time_seconds
-        return speed * 3.6  # Convert from m/s to km/h
+        speed_mps = distance / time_seconds  # Speed in meters per second
+        return speed_mps * 2.23694  # Convert from m/s to mph
     return 0
+
 
 class SpeedTracker:
     def __init__(self):
@@ -79,10 +80,16 @@ def overlay_edges_on_image(original_image, edge_image):
     return overlay_image
 
 def fill_strips(image, edges):
-    """Finds and fills the detected strips in the image."""
+    """Finds and fills the detected strips in the image based on their size."""
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(image, contours, -1, (0, 0, 255), thickness=cv2.FILLED)
+    min_area = 40  # Minimum area for a contour to be considered a strip, adjust as needed
+    max_area = 1000  # Maximum area to exclude too large contours, adjust as needed
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if min_area < area < max_area:
+            cv2.drawContours(image, [contour], -1, (0, 255, 0), thickness=cv2.FILLED)
     return image
+
 
 
 def process_video(video_path):
@@ -103,7 +110,7 @@ def process_video(video_path):
 
         average_speed = speed_tracker.get_average_speed()
         if average_speed > 0:
-            print(f"Average Speed: {average_speed:.2f} m/h")
+            print(f"Average Speed: {average_speed:.2f} MPH")
 
         overlay_image = overlay_edges_on_image(filled_strips_image, roi_edges)
         cv2.line(overlay_image, (roi_start_x, detection_line_y), (roi_end_x, detection_line_y), (0, 255, 0), 2)
