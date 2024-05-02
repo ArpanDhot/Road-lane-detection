@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 import time
+from collections import deque
 
 # Constants
 FRAME_RATE = 60  # Frame rate of the video, adjust according to your video
-DISTANCE_BETWEEN_STRIPS = 0.5  # Distance between strips in meters, adjust as needed
+DISTANCE_BETWEEN_STRIPS = 0.55  # Distance between strips in meters, adjust as needed
 
 
 def canny(image):
@@ -52,6 +53,23 @@ def calculate_speed(distance, time_seconds):
         return speed * 3.6  # Convert from m/s to km/h
     return 0
 
+class SpeedTracker:
+    def __init__(self):
+        self.speeds = deque(maxlen=FRAME_RATE)
+        self.last_crossing_time = None
+
+    def update_crossing(self, current_time):
+        if self.last_crossing_time is not None:
+            time_interval = current_time - self.last_crossing_time
+            speed = calculate_speed(DISTANCE_BETWEEN_STRIPS, time_interval)
+            self.speeds.append(speed)
+        self.last_crossing_time = current_time
+
+    def get_average_speed(self):
+        if len(self.speeds) > 0:
+            return sum(self.speeds) / len(self.speeds)
+        return 0
+
 
 def overlay_edges_on_image(original_image, edge_image):
     """Creates a color overlay of the detected edges on the original image."""
@@ -63,7 +81,7 @@ def overlay_edges_on_image(original_image, edge_image):
 
 def process_video(video_path):
     cap = cv2.VideoCapture(video_path)
-    last_crossing_time = None
+    speed_tracker = SpeedTracker()
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -74,17 +92,13 @@ def process_video(video_path):
         roi_edges, detection_line_y, roi_start_x, roi_end_x = get_roi_and_detection_line_y(edges)
 
         if detect_crossing(roi_edges, detection_line_y):
-            current_time = time.time()
-            if last_crossing_time is not None:
-                time_interval = current_time - last_crossing_time
-                speed = calculate_speed(DISTANCE_BETWEEN_STRIPS, time_interval)
-                print(f"Speed: {speed:.2f} km/h")
-            last_crossing_time = current_time
+            speed_tracker.update_crossing(time.time())
 
-        # Overlay edges on the original image
+        average_speed = speed_tracker.get_average_speed()
+        if average_speed > 0:
+            print(f"Average Speed: {average_speed:.2f} m/h")
+
         overlay_image = overlay_edges_on_image(frame, roi_edges)
-
-        # Draw the detection line across the width of the ROI
         cv2.line(overlay_image, (roi_start_x, detection_line_y), (roi_end_x, detection_line_y), (0, 255, 0), 2)
         cv2.imshow('Edges with Detection Line', overlay_image)
         if cv2.waitKey(1) & 0xFF == ord('q'):
