@@ -78,6 +78,12 @@ def overlay_edges_on_image(original_image, edge_image):
     overlay_image = cv2.addWeighted(original_image, 0.8, edge_colored, 0.2, 0)
     return overlay_image
 
+def fill_strips(image, edges):
+    """Finds and fills the detected strips in the image."""
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(image, contours, -1, (0, 0, 255), thickness=cv2.FILLED)
+    return image
+
 
 def process_video(video_path):
     cap = cv2.VideoCapture(video_path)
@@ -90,6 +96,7 @@ def process_video(video_path):
 
         edges = canny(frame)
         roi_edges, detection_line_y, roi_start_x, roi_end_x = get_roi_and_detection_line_y(edges)
+        filled_strips_image = fill_strips(frame.copy(), roi_edges)
 
         if detect_crossing(roi_edges, detection_line_y):
             speed_tracker.update_crossing(time.time())
@@ -98,7 +105,7 @@ def process_video(video_path):
         if average_speed > 0:
             print(f"Average Speed: {average_speed:.2f} m/h")
 
-        overlay_image = overlay_edges_on_image(frame, roi_edges)
+        overlay_image = overlay_edges_on_image(filled_strips_image, roi_edges)
         cv2.line(overlay_image, (roi_start_x, detection_line_y), (roi_end_x, detection_line_y), (0, 255, 0), 2)
         cv2.imshow('Edges with Detection Line', overlay_image)
         if cv2.waitKey(1) & 0xFF == ord('q'):
