@@ -3,11 +3,11 @@
 
 ## Overview
 
-This project processes a video to detect lane lines and calculate the speed of vehicles using computer vision techniques. The primary objective is to analyze the movement of vehicles by detecting lane lines and tracking vehicle speed through predefined strips on the road. This system can be beneficial for traffic monitoring and automated vehicle guidance systems.
+This project processes a video to detect lane lines and calculate the speed of vehicles using computer vision techniques. The primary objective is to analyse the movement of vehicles by detecting lane lines and tracking vehicle speed through predefined strips on the road. This system can be beneficial for traffic monitoring and automated vehicle guidance systems.
 
 ## Features
 
-- **Lane Line Detection**: Utilizes edge detection and Hough Transform to detect lane lines in the video.
+- **Lane Line Detection**: Utilises edge detection and Hough Transform to detect lane lines in the video.
 - **Speed Calculation**: Tracks the vehicle speed by calculating the time taken to cross predefined strips on the road.
 - **Dynamic Overlays**: Draws lane lines, speed information, and deviation angles on the video frames.
 - **Real-time Processing**: Processes video frames in real-time and displays the results with overlays.
@@ -60,7 +60,7 @@ DISTANCE_BETWEEN_STRIPS = 1.7  # Distance between strips in meters, adjust as ne
 
 ### Real-time Processing
 
-**Canny Edge Detection**: Detects edges in the video frames.
+**Grayscale Conversion and Canny Edge Detection**: The video frames are converted to grayscale and edge detection is applied using the Canny algorithm. Grayscale conversion removes unnecessary color information, improving performance by reducing data complexity.
 
 ```python
 def canny(image):
@@ -70,7 +70,7 @@ def canny(image):
     return canny
 ```
 
-**Region of Interest**: Masks the region of interest in the video frames to focus on the road.
+**Region of Interest**: Masks the region of interest in the video frames to focus on the road. This improves performance by reducing unnecessary details and concentrating on the area where lane lines are expected to be found.
 
 ```python
 def region_of_interest(image):
@@ -134,7 +134,7 @@ def calculate_speed(distance, time_seconds):
     return 0
 ```
 
-**SpeedTracker Class**: Tracks and maintains the vehicle speeds.
+**SpeedTracker Class**: Tracks and maintains the vehicle speeds. It calculates speed by measuring the time taken for the vehicle to cross predefined strips on the road. The accuracy is maintained by calculating the frame rate of the video to ensure precise time measurements.
 
 ```python
 class SpeedTracker:
@@ -157,7 +157,7 @@ class SpeedTracker:
 
 ### Process Video
 
-Processes the video to detect lanes and calculate speed.
+Processes the video to detect lanes and calculate speed. The video is processed frame by frame to detect lane lines and calculate the vehicle's speed. The processing includes converting the frame to grayscale, applying Canny edge detection, masking the region of interest, and detecting lines using the Hough Transform.
 
 ```python
 def process_video(video_path):
