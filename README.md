@@ -14,7 +14,7 @@ This project processes a video to detect lane lines and calculate the speed of v
 
 ## Demo
 
-![Demo GIF](path/to/demo.gif)
+![Demo GIF](demo/image14.gif)
 
 ## Getting Started
 
